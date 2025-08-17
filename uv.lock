@@ -1,0 +1,23 @@
+version = 1
+revision = 3
+requires-python = ">=3.13"
+
+[[package]]
+name = "aioftp"
+version = "0.26.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/0c/9cb5a5570af3b22ad188f63d5f6166da1344c9e720cda39e5de622114473/aioftp-0.26.2.tar.gz", hash = "sha256:ecd8cc9687bbb5e1b4dddc155aa1f3ea873d6e9f9e968221378daf04c2e4f763", size = 70140, upload-time = "2025-06-27T11:22:20.449Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/e7/4921e957802495fcd2ce39cbf7b30338dd2250d2ecd3eb9de2077aa4b8fe/aioftp-0.26.2-py3-none-any.whl", hash = "sha256:c44d1de5e4b80b23eb2f5b45871e71e36e72cd623b06cc8ab9afd32873389105", size = 44393, upload-time = "2025-06-27T11:22:19.118Z" },
+]
+
+[[package]]
+name = "chat"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "aioftp" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "aioftp", specifier = ">=0.26.2" }]

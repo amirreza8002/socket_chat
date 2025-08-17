@@ -1,26 +1,108 @@
 import asyncio
 import sys
 
-writers = set()
+import aioftp
+
+from commands import create_group, join_group, leave_group, _clean_up
+
+groups: dict[str, set[asyncio.StreamWriter]] = {}
 
 
-async def socket_server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    writers.add(writer)
-    async for data in reader:
+class Server:
+    async def __call__(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        await self.socket_server(reader, writer)
+
+    async def socket_server(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        ftp = False
+        data: bytes
+        async for data in reader:
+            if ftp:
+                await self.ftp_server.dispatcher(reader, writer)
+
+            message, group = self._info(writer, data)
+
+            if self._check_message_is_command(writer, message, group):
+                continue
+
+            elif message == "q\n":
+                writer.write("goodbye\n".encode())
+                break
+
+            elif message == "ftp\n":
+                writer.write("switching to ftp, send something to resume\n".encode())
+                ftp = True
+
+                self.ftp_server = aioftp.Server()
+                self.ftp_server.server_host = "127.0.0.1"
+                self.ftp_server.server_port = 8888
+                self.ftp_server.connections = {}
+                self.ftp_server._start_server_extra_arguments = {}
+
+                continue
+
+            if not group:
+                writer.write(
+                    "please join a group before sending messages, or send h for help\n".encode()
+                )
+                continue
+
+            self._write(writer, data, group)
+
+        _clean_up(writer, group, groups)
+
+        await writer.drain()
+        if hasattr(self, "ftp_server"):
+            self.ftp_server.close()
+
+    def _info(self, writer: asyncio.StreamWriter, data: bytes) -> tuple[str, str]:
+        print(writer)
         message = data.decode()
         addr = writer.get_extra_info("peername")
+        group = getattr(self, "group", None)
 
         print(f"Received {message!r} from {addr!r}")
-        for w in writers:
+        return message, group
+
+    def _write(self, writer: asyncio.StreamWriter, data: bytes, group: str):
+        for w in groups[group]:
             if w != writer:
                 w.write(data)
 
-    await writer.drain()
-    writers.remove(writer)
+    def _check_message_is_command(
+        self, writer: asyncio.StreamWriter, message: str, group: str
+    ) -> bool:
+        if message == "h\n":
+            writer.write(
+                "send c <group> to create a group, j <group> to join a group, l to leave a group, q to exit\n".encode()
+            )
+
+        elif message.startswith("c "):
+            create_group(self, message, writer, group, groups)
+
+        elif message.startswith("j "):
+            join_group(self, message, writer, group, groups)
+
+        elif message == "l\n":
+            leave_group(message, writer, group, groups)
+
+        else:
+            return False
+        return True
+
+
+async def make_server(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+):
+    return await Server()(reader, writer)
 
 
 async def main():
-    server = await asyncio.start_server(socket_server, "127.0.0.1", 8888)
+    server = await asyncio.start_server(make_server, "127.0.0.1", 8888)
     addr = ", ".join(str(sock.getsockname()) for sock in server.sockets)
     print(f"Serving on {addr}")
 
