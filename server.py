@@ -25,7 +25,7 @@ class Server:
 
             message, group = self._info(writer, data)
 
-            if self._check_message_is_command(writer, message, group):
+            if await self._check_message_is_command(writer, message, group):
                 continue
 
             elif message == "q\n":
@@ -52,9 +52,10 @@ class Server:
 
             self._write(writer, data, group)
 
+            await writer.drain()
+
         _clean_up(writer, group, groups)
 
-        await writer.drain()
         if hasattr(self, "ftp_server"):
             self.ftp_server.close()
 
@@ -72,7 +73,7 @@ class Server:
             if w != writer:
                 w.write(data)
 
-    def _check_message_is_command(
+    async def _check_message_is_command(
         self, writer: asyncio.StreamWriter, message: str, group: str
     ) -> bool:
         if message == "h\n":
@@ -91,6 +92,8 @@ class Server:
 
         else:
             return False
+
+        await writer.drain()
         return True
 
 
