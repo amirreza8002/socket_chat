@@ -17,12 +17,8 @@ class Server:
     async def socket_server(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ):
-        ftp = False
         data: bytes
         async for data in reader:
-            if ftp:
-                await self.ftp_server.dispatcher(reader, writer)
-
             message, group = self._info(writer, data)
 
             if await self._check_message_is_command(writer, message, group):
@@ -31,18 +27,6 @@ class Server:
             elif message == "q\n":
                 writer.write("goodbye\n".encode())
                 break
-
-            elif message == "ftp\n":
-                writer.write("switching to ftp, send something to resume\n".encode())
-                ftp = True
-
-                self.ftp_server = aioftp.Server()
-                self.ftp_server.server_host = "127.0.0.1"
-                self.ftp_server.server_port = 8888
-                self.ftp_server.connections = {}
-                self.ftp_server._start_server_extra_arguments = {}
-
-                continue
 
             if not group:
                 writer.write(
