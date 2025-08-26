@@ -1,7 +1,8 @@
 import asyncio
 import sys
 
-import aioftp
+import anyio
+from anyio._backends._asyncio import SocketStream
 
 from commands import create_group, join_group, leave_group, _clean_up
 
@@ -9,96 +10,77 @@ groups: dict[str, set[asyncio.StreamWriter]] = {}
 
 
 class Server:
-    async def __call__(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ):
-        await self.socket_server(reader, writer)
+    async def __call__(self, client: SocketStream):
+        await self.socket_server(client)
 
-    async def socket_server(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ):
+    async def socket_server(self, client: SocketStream):
         data: bytes
-        async for data in reader:
-            message, group = self._info(writer, data)
+        group = None
+        async for data in client:
+            message, group = self._info(client, data)
 
-            if await self._check_message_is_command(writer, message, group):
+            if await self._check_message_is_command(client, message, group):
                 continue
 
             elif message == "q\n":
-                writer.write("goodbye\n".encode())
+                await client.send("goodbye\n".encode())
                 break
 
             if not group:
-                writer.write(
+                await client.send(
                     "please join a group before sending messages, or send h for help\n".encode()
                 )
                 continue
 
-            self._write(writer, data, group)
+            await self._write(client, data, group)
 
-            await writer.drain()
+        await _clean_up(client, group, groups)
 
-        _clean_up(writer, group, groups)
-
-        if hasattr(self, "ftp_server"):
-            self.ftp_server.close()
-
-    def _info(self, writer: asyncio.StreamWriter, data: bytes) -> tuple[str, str]:
-        print(writer)
+    def _info(self, client, data: bytes) -> tuple[str, str]:
         message = data.decode()
-        addr = writer.get_extra_info("peername")
         group = getattr(self, "group", None)
 
-        print(f"Received {message!r} from {addr!r}")
         return message, group
 
-    def _write(self, writer: asyncio.StreamWriter, data: bytes, group: str):
-        for w in groups[group]:
-            if w != writer:
-                w.write(data)
+    async def _write(self, client, data: bytes, group: str):
+        for c in groups[group]:
+            if c != client:
+                await c.send(data)
 
-    async def _check_message_is_command(
-        self, writer: asyncio.StreamWriter, message: str, group: str
-    ) -> bool:
+    async def _check_message_is_command(self, client, message: str, group: str) -> bool:
         if message == "h\n":
-            writer.write(
+            await client.send(
                 "send c <group> to create a group, j <group> to join a group, l to leave a group, q to exit\n".encode()
             )
 
         elif message.startswith("c "):
-            create_group(self, message, writer, group, groups)
+            await create_group(self, message, client, group, groups)
 
         elif message.startswith("j "):
-            join_group(self, message, writer, group, groups)
+            await join_group(self, message, client, group, groups)
 
         elif message == "l\n":
-            leave_group(message, writer, group, groups)
+            await leave_group(message, client, group, groups)
 
         else:
             return False
 
-        await writer.drain()
         return True
 
 
-async def make_server(
-    reader: asyncio.StreamReader,
-    writer: asyncio.StreamWriter,
-):
-    return await Server()(reader, writer)
+async def make_server(client):
+    return await Server()(client)
 
 
 async def main():
-    server = await asyncio.start_server(make_server, "127.0.0.1", 8888)
-    addr = ", ".join(str(sock.getsockname()) for sock in server.sockets)
-    print(f"Serving on {addr}")
+    server = await anyio.create_tcp_listener(local_port=8888)
+    print("starting server")
 
-    async with server:
-        await server.serve_forever()
+    await server.serve(make_server)
 
 
 try:
-    asyncio.run(main())
+    anyio.run(main)
 except KeyboardInterrupt:
     print("\nbye bye")
     sys.exit()

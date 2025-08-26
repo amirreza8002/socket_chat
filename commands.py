@@ -1,45 +1,44 @@
-import asyncio
-
-
-def create_group(
+async def create_group(
     self,
     message: str,
-    writer: asyncio.StreamWriter,
+    client,
     group: str | None,
-    groups: dict[str, set[asyncio.StreamWriter]],
+    groups: dict[str, set],
 ):
-    groups[message[2:-1]] = {writer}
+    groups[message[2:-1]] = {client}
     setattr(self, "group", message[2:-1])
 
     if group:
-        groups[group].remove(writer)
+        groups[group].remove(client)
 
-    writer.write(f"created group: {message[2:-1]}\n".encode())
+    await client.send(f"created group: {message[2:-1]}\n".encode())
 
 
-def join_group(self, message, writer, group, groups):
+async def join_group(self, message, client, group, groups):
     if message[2:-1] in groups:
-        groups[message[2:-1]].add(writer)
+        groups[message[2:-1]].add(client)
         if group:
-            groups[group].remove(writer)
+            groups[group].remove(client)
 
         setattr(self, "group", message[2:-1])
-        writer.write(f"joined group: {message[2:-1]}\n".encode())
+        await client.send(f"joined group: {message[2:-1]}\n".encode())
 
     else:
-        writer.write("no such group exists\n".encode())
+        await client.send("no such group exists\n".encode())
 
 
-def leave_group(message, writer, group, groups):
+async def leave_group(message, client, group, groups):
     message = f"left group: {message[2:-1]}\n"
-    _clean_up(writer, group, groups, message)
+    await _clean_up(client, group, groups, message)
 
 
-def _clean_up(writer, group, groups, message=""):
+async def _clean_up(client, group, groups, message=""):
     if group:
-        groups[group].remove(writer)
+        groups[group].remove(client)
         if not groups[group]:
             groups.pop(group)
 
         if message:
-            writer.write(message.encode())
+            await client.send(message.encode())
+        else:
+            await client.send_eof()
